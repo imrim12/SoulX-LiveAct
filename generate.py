@@ -25,6 +25,7 @@ from src.audio_analysis.wav2vec2 import Wav2Vec2Model
 from diffusers.utils import export_to_video
 
 from fp8_gemm import FP8GemmOptions, enable_fp8_gemm
+from fp4_gemm import FP4GemmOptions, enable_fp4_gemm
 
 
 torch.backends.cudnn.benchmark = True
@@ -68,6 +69,16 @@ def _parse_args():
         action="store_true",
         default=False,
         help="Whether to store kv cache in FP8 and dequantize to BF16 on use.")
+    parser.add_argument(
+        "--fp8_gemm",
+        action="store_true",
+        default=False,
+        help="Whether to enable FP8 GEMM for the model.")
+    parser.add_argument(
+        "--fp4_gemm",
+        action="store_true",
+        default=False,
+        help="Whether to enable FP4 GEMM for the model.")
     parser.add_argument(
         "--block_offload",
         action="store_true",
@@ -197,19 +208,6 @@ def generate(args):
     for n in range(40):
         wan_i2v_model.blocks[n].self_attn.init_kvidx(frame_len, world_size)
 
-    enable_fp8_gemm(wan_i2v_model, options=FP8GemmOptions())
-    if args.block_offload:
-        for name, child in wan_i2v_model.named_children():
-            if name != 'blocks':
-                child.to(device)
-        wan_i2v_model.enable_block_offload(
-            onload_device=torch.device(f"cuda:{device}"),
-        )
-    else:
-        wan_i2v_model = wan_i2v_model.to(device)
-    wan_i2v_model.eval()
-    wan_i2v_model = torch.compile(wan_i2v_model, mode="max-autotune-no-cudagraphs", backend="inductor", dynamic=False)
-
     vae = LightVAE(vae_path=os.path.join(args.ckpt_dir, 'Wan2.1_VAE.pth'), dtype=torch.bfloat16, device=device,
                    use_lightvae=False, parallel=(world_size > 1))
 
@@ -233,9 +231,29 @@ def generate(args):
         for name, param in _model.named_parameters():
             param.requires_grad = False
 
+    if args.fp8_gemm:
+        enable_fp8_gemm(wan_i2v_model, options=FP8GemmOptions())
+    if args.fp4_gemm:
+        print("Enabling FP4 GEMM acceleration...")
+        def filter_fn(name, module):
+            if "blocks." not in name:
+                return False
+            return True
+        enable_fp4_gemm(wan_i2v_model, options=FP4GemmOptions(), module_filter=filter_fn)
+    if args.block_offload:
+        for name, child in wan_i2v_model.named_children():
+            if name != 'blocks':
+                child.to(device)
+        wan_i2v_model.enable_block_offload(
+            onload_device=torch.device(f"cuda:{device}"),
+        )
+    else:
+        wan_i2v_model = wan_i2v_model.to(device)
+    wan_i2v_model.eval()
+    wan_i2v_model = torch.compile(wan_i2v_model)
+
     vae.model.eval()
     vae.encode = torch.compile(vae.encode)
-    vae.decode = torch.compile(vae.decode)
 
     torch_gc()
 
@@ -351,7 +369,9 @@ def generate(args):
 
                     dt = timesteps[i] - timesteps[i + 1]
                     dt = dt / 1000
-                    latent = latent + (-noise_pred) * dt[0]
+                    # latent = latent + (-noise_pred) * dt[0]
+                    x0_pred = latent + (-noise_pred) * (timesteps[i][0]/1000 - 0.0)
+                    latent = (1-timesteps[i+1][0]/1000)*x0_pred + torch.randn_like(x0_pred)*(timesteps[i+1][0]/1000)
 
                 if f == 0:
                     _latent = latent

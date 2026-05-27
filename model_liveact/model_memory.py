@@ -15,6 +15,7 @@ from diffusers.loaders import PeftAdapterMixin
 
 from .attention import flash_attention, SingleStreamAttention, sdpa_attention, flex_attention
 from fp8_gemm import FP8Linear
+from fp4_gemm import FP4Linear
 import logging
 
 try:
@@ -659,7 +660,7 @@ class WanBlockOffloadManager:
             if buffer is not None:
                 module._buffers[name] = self._pin_tensor(buffer)
 
-        if isinstance(module, FP8Linear):
+        if isinstance(module, (FP8Linear, FP4Linear)):
             module._fp16_weight_cpu = self._pin_tensor(module._fp16_weight_cpu)
             module._fp16_bias_cpu = self._pin_tensor(module._fp16_bias_cpu)
 
@@ -697,9 +698,45 @@ class WanBlockOffloadManager:
 
         dst_module._last_weight_version = src_module._last_weight_version
 
+    def _copy_fp4_linear(self, dst_module, src_module):
+        if dst_module.linear is not None and src_module.linear is not None:
+            self._copy_module_state(dst_module.linear, src_module.linear)
+
+        if dst_module.bias is not None and src_module.bias is not None:
+            self._copy_tensor(dst_module.bias.data, src_module.bias.data)
+
+        dst_module._fp16_weight_cpu = src_module._fp16_weight_cpu
+        dst_module._fp16_bias_cpu = src_module._fp16_bias_cpu
+
+        if src_module._fp4_weight is None or src_module._fp4_weight_scale is None or src_module._w_global_scale is None:
+            dst_module._fp4_weight = None
+            dst_module._fp4_weight_scale = None
+            dst_module._w_global_scale = None
+            dst_module._weight_cache_device = None
+            if dst_module._fp16_weight_cpu is not None:
+                dst_module.materialize_fp4_weight(self.onload_device)
+        else:
+            if dst_module._fp4_weight is None or dst_module._fp4_weight.shape != src_module._fp4_weight.shape:
+                dst_module._fp4_weight = src_module._fp4_weight.to(device=self.onload_device, non_blocking=True)
+            else:
+                self._copy_tensor(dst_module._fp4_weight, src_module._fp4_weight)
+
+            if dst_module._fp4_weight_scale is None or dst_module._fp4_weight_scale.shape != src_module._fp4_weight_scale.shape:
+                dst_module._fp4_weight_scale = src_module._fp4_weight_scale.to(device=self.onload_device, non_blocking=True)
+            else:
+                self._copy_tensor(dst_module._fp4_weight_scale, src_module._fp4_weight_scale)
+
+            dst_module._w_global_scale = src_module._w_global_scale.to(device=self.onload_device, non_blocking=True)
+            dst_module._weight_cache_device = dst_module._cached_fp4_device()
+
+        dst_module._last_weight_version = src_module._last_weight_version
+
     def _copy_module_state(self, dst_module, src_module):
         if isinstance(dst_module, FP8Linear) and isinstance(src_module, FP8Linear):
             self._copy_fp8_linear(dst_module, src_module)
+            return
+        if isinstance(dst_module, FP4Linear) and isinstance(src_module, FP4Linear):
+            self._copy_fp4_linear(dst_module, src_module)
             return
 
         dst_params = dict(dst_module.named_parameters(recurse=False))
@@ -908,6 +945,15 @@ class WanModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         )
         self.block_offload_enabled = True
         torch.cuda.empty_cache()
+        return self
+
+    def disable_block_offload(self):
+        if self.block_offload_manager is not None:
+            self.block_offload_manager.unload_all()
+            for block in self.blocks:
+                block.to(self.patch_embedding.weight.device)
+            self.block_offload_manager = None
+        self.block_offload_enabled = False
         return self
 
     def forward(

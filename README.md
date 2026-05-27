@@ -29,6 +29,8 @@
 
 ## 🔥🔥🔥 News
 
+* ⚡  May 27, 2026: We updated FP4 GEMM support for B-series GPUs, including RTX 5090, RTX PRO 6000, B100, and B200.
+* 🔼 May 11, 2026: We updated the model and fixed several bugs to reduce excessive sharpening around the lips, teeth, and other facial details. 
 * 📢 Mar 18, 2026: We now support consumer GPUs (e.g., RTX 4090, RTX 5090) with FP8 KV cache and CPU model offloading. In our tests, the 18B model (14B Wan2.1 + 4B audio module) achieves a throughput of 6 FPS on a single RTX 5090.
 * 👋 Mar 16, 2026: We release the inference code and model weights of SoulX-LiveAct.
 
@@ -68,7 +70,7 @@
   - [x] GUI demo Support
   - [x] End-end adaptive FP8 precision
   - [x] Support model offloading for consumer GPUs (e.g., RTX 4090, RTX 5090) to reduce memory usage
-  - [ ] Support FP4 precision for B-series GPUs (e.g., RTX 5090, B100, B200)
+  - [x] Support FP4 precision for B-series GPUs (e.g., RTX 5090, B100, B200)
   - [ ] Release training code
 
 ## ▶️ Quick Start
