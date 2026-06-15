@@ -355,7 +355,7 @@ def generate(args):
                              'start_idx': sum(blksz_lst[:f]) * frame_len, 'end_idx': sum(blksz_lst[:f + 1]) * frame_len,
                              'update_cache': _ > 1}
                     noise_pred = wan_i2v_model([latent.to(device)], t=timestep, kv_cache=kv_cache[i],
-                                               skip_audio=False if i in [1, 2] else False, **arg_c)[0]
+                                               skip_audio=False if i in [1, 2] else True, **arg_c)[0]
 
                     if args.audio_cfg>1.0 and i in [1, 2]:
                         arg_null_audio = \
