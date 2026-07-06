@@ -1,0 +1,17 @@
+[
+    {
+        "prompt": "A cheerful young woman hosting a product live-stream, enthusiastically presenting a carton of fresh milk to the camera, smiling and talking with lively energy, animated facial expressions, natural head movements and upper-body gestures.",
+        "cond_image": "examples/image/5.png",
+        "cond_audio": "examples/audio/5.mp3"
+    },
+    {
+        "prompt": "A cheerful young woman streaming a cozy podcast, wearing earphones and speaking into a large microphone, smiling warmly with playful animated expressions and gentle natural head movements.",
+        "cond_image": "examples/image/6.png",
+        "cond_audio": "examples/audio/6.mp3"
+    },
+    {
+        "prompt": "A young woman speaking as a guest on a talk-show podcast, sitting at a microphone, expressive and engaged facial expressions with natural head movements and subtle gestures as she talks.",
+        "cond_image": "examples/image/7.png",
+        "cond_audio": "examples/audio/7.mp3"
+    }
+]
