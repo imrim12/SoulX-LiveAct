@@ -1,0 +1,90 @@
+# docker-compose for SoulX-LiveAct.
+#
+# Convenience goal: every input and output folder lives on the HOST, relative to
+# this compose file's directory (the repo root = the "real working directory"),
+# so you can drop inputs into examples/ and pick up results without docker cp.
+#
+#   - `.:/workspace`            -> code + examples/ (inputs) + generated outputs, read-write.
+#                                  generate.py writes its <image>_<audio>.mp4 into the CWD
+#                                  (/workspace = repo root on the host); demo.py writes into
+#                                  generated_videos/, hls_output/, uploads/ under the same dir.
+#   - `./models:/workspace/models:ro`  -> the ~55GB weights, mounted READ-ONLY on top of the
+#                                  repo mount (nested override), matching the models-are-ro
+#                                  convention used for the other vendored diffusion repos.
+#
+# Build once:   docker compose build
+# Batch run:    docker compose run --rm generate
+# GUI demo:     docker compose up demo        (then open http://localhost:5001)
+#
+# Override the command per run, e.g. a different input json / resolution:
+#   docker compose run --rm generate python generate.py --size 512*512 \
+#     --ckpt_dir models/LiveAct --wav2vec_dir models/chinese-wav2vec2-base \
+#     --fps 24 --input_json examples/example.json --fp8_kv_cache --block_offload --t5_cpu
+
+x-liveact-base: &liveact-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: soulx-liveact:local
+  working_dir: /workspace
+  environment:
+    # channels-last 3D memory format, per the repo's own launch commands.
+    USE_CHANNELS_LAST_3D: "1"
+  volumes:
+    # Whole repo -> /workspace: gives code + examples/ (inputs) + outputs, all on the host.
+    - .:/workspace
+    # Weights re-mounted read-only on top of the repo mount (nested bind override).
+    - ./models:/workspace/models:ro
+  # Docker Desktop's WSL2 backend passes the GPU through with this; no NVIDIA
+  # Container Toolkit install needed on this machine (per CLAUDE.md).
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  # Diffusion models need a big shared-memory segment for the dataloader / NCCL.
+  shm_size: "16gb"
+  # Keeps large HF/torch allocations from fragmenting VRAM as badly on the 16GB card.
+  ulimits:
+    memlock: -1
+    stack: 67108864
+
+services:
+  # Batch inference. Default command mirrors the repo's single-GPU consumer recipe
+  # (README section 4): FP8 KV cache + block offload + T5 on CPU, the config meant to
+  # squeeze the 18B model onto a 24-32GB card. On this machine's 16GB RTX 4060 Ti this
+  # is expected to be very slow (well under 1 FPS) and MAY still OOM -- drop --size to
+  # 512*512 or lower and add --offload_cache if it does. Output <image>_<audio>.mp4
+  # lands in the repo root on the host.
+  generate:
+    <<: *liveact-base
+    command: >
+      python generate.py
+      --size 416*720
+      --ckpt_dir models/LiveAct
+      --wav2vec_dir models/chinese-wav2vec2-base
+      --fps 24
+      --input_json examples/example.json
+      --fp8_kv_cache
+      --block_offload
+      --t5_cpu
+
+  # Flask GUI demo (single GPU / consumer path). Serves on 5001; outputs to
+  # generated_videos/ (+ hls_output/, uploads/) on the host.
+  demo:
+    <<: *liveact-base
+    ports:
+      - "5001:5001"
+    command: >
+      torchrun --nproc_per_node=1 --master_port=29500
+      demo.py
+      --ckpt_dir models/LiveAct
+      --wav2vec_dir models/chinese-wav2vec2-base
+      --size 416*720
+      --port 5001
+      --video_save_path ./generated_videos
+      --fp8_kv_cache
+      --block_offload
+      --t5_cpu

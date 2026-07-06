@@ -1,6 +1,7 @@
-torch==2.8.0
-torchaudio==2.8.0
-torchvision==0.23.0
+# torch/torchaudio/torchvision intentionally not pinned here: the Docker base image
+# (pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel) already provides the matching cu128
+# build; reinstalling via pip risks resolving a different (non-cu128 or CPU-only)
+# build from PyPI's generic index instead.
 opencv-python>=4.11.0.86
 diffusers>=0.31.0
 transformers>=4.49.0
