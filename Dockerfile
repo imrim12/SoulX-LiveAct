@@ -24,6 +24,15 @@ RUN pip install --no-cache-dir ninja setuptools wheel && \
     cd /tmp/SageAttention && python setup.py install && \
     rm -rf /tmp/SageAttention
 
+# --- Step 2b: flash-attn v2 (REQUIRED, but missing from requirements.txt) ---
+# wan/modules/attention.py hard-asserts FLASH_ATTN_2_AVAILABLE (no torch-SDPA fallback), so
+# generate.py/demo.py crash without it. Must be >=2.7.1,<=2.8.2: xformers (pulled in by diffusers)
+# rejects 2.8.3+ at import time. 2.7.3 satisfies that window and its prebuilt kernels run on
+# Blackwell sm_120 (RTX 5090) as well as Ada sm_89 -- verified live. Prebuilt wheel matches this
+# base image exactly (torch 2.8 / cu12 / cp311 / cxx11abiTRUE), so no from-source compile.
+RUN pip install --no-cache-dir --no-deps \
+    "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/flash_attn-2.7.3+cu12torch2.8cxx11abiTRUE-cp311-cp311-linux_x86_64.whl"
+
 # --- Step 3: vllm (fp8 gemm kernel) ---
 RUN pip install --no-cache-dir vllm==0.11.0
 
