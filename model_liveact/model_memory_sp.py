@@ -25,7 +25,7 @@ import logging
 try:
     from sageattention import sageattn
 
-    USE_SAGEATTN = True
+    USE_SAGEATTN = False
     logging.info("Using sageattn")
 except:
     USE_SAGEATTN = False
@@ -316,7 +316,7 @@ class WanSelfAttention(nn.Module):
             [[0, 3], [3, 7]] if end_idx == 14 * frame_seqlen else \
                 [[0, 3], [3, 7]] if end_idx == 22 * frame_seqlen else -1
 
-        x = xFuserLongContextAttention(attn_type=AttnType.SAGE_FP8_SM90)(
+        x = xFuserLongContextAttention(attn_type=AttnType.FA)(
             None,
             query=causal_rope_apply(q, grid_sizes, freqs, sp_size, sp_rank,
                                     start_frame=0 if end_idx == 6 * frame_seqlen else 6).type_as(v),

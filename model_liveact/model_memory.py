@@ -21,7 +21,7 @@ import logging
 try:
     from sageattention import sageattn
 
-    USE_SAGEATTN = True
+    USE_SAGEATTN = False
     logging.info("Using sageattn")
 except:
     USE_SAGEATTN = False
