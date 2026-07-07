@@ -203,7 +203,7 @@ def generate(args):
                 } for layer_id in range(40)} for i in range(len(timesteps) - 1)
             }
 
-    wan_i2v_model = WanModel.from_pretrained(args.ckpt_dir, torch_dtype=torch.bfloat16, low_cpu_mem_usage=False)
+    wan_i2v_model = WanModel.from_pretrained(args.ckpt_dir, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True)
     wan_i2v_model = wan_i2v_model.to(dtype=torch.bfloat16)
     for n in range(40):
         wan_i2v_model.blocks[n].self_attn.init_kvidx(frame_len, world_size)
